@@ -1,0 +1,82 @@
+import re
+from collections import Counter
+
+# Define patterns and thresholds for potential anomalies
+ALLOWED_DOMAINS = [
+    "esm.ubuntu.com", "login.ubuntu.com", "dashboard.snapcraft.io", 
+    "api.snapcraft.io", "snapcraftcontent.com", "contracts.canonical.com"
+]
+ALLOWED_PORT = 443  # HTTPS port
+REPEATED_ACCESS_THRESHOLD = 3  # Set a threshold for repeated access to the same domain
+
+# Function to parse each log entry
+def parse_log_entry(entry):
+    # Example log format:
+    # Timestamp SourceIP SourcePort DestIP DestPort Process Action URL ...
+    parts = entry.strip().split()
+    if len(parts) < 8:
+        return None  # Ignore malformed entries
+    return {
+        "timestamp": parts[0],
+        "source_ip": parts[1],
+        "source_port": int(parts[2]),
+        "dest_ip": parts[3],
+        "dest_port": int(parts[4]),
+        "process": parts[5],
+        "action": parts[6],
+        "url": parts[7],
+        "description": " ".join(parts[8:])
+    }
+
+# Function to detect suspicious log entries
+def detect_suspicious_logs(log_entries):
+    suspicious_logs = []
+    domain_access_count = Counter()
+
+    for entry in log_entries:
+        log = parse_log_entry(entry)
+        if not log:
+            continue
+
+        # Count accesses to each domain
+        domain_access_count[log["url"]] += 1
+
+        # Check for unauthorized or unusual domains
+        if log["url"] not in ALLOWED_DOMAINS:
+            suspicious_logs.append(log)
+            continue
+
+        # Check for unauthorized port access
+        if log["dest_port"] != ALLOWED_PORT:
+            suspicious_logs.append(log)
+            continue
+
+    # Flag domains with repeated access beyond the threshold
+    for entry in log_entries:
+        log = parse_log_entry(entry)
+        if not log:
+            continue
+
+        if domain_access_count[log["url"]] > REPEATED_ACCESS_THRESHOLD:
+            suspicious_logs.append(log)
+
+    return suspicious_logs
+
+# Main function to load and analyze the log file
+def analyze_log_file(log_file_path):
+    with open(log_file_path, "r") as file:
+        log_entries = file.readlines()
+
+    suspicious_logs = detect_suspicious_logs(log_entries)
+
+    print("=== Suspicious Log Entries ===")
+    if suspicious_logs:
+        for log in suspicious_logs:
+            print(f"{log['timestamp']} | Source IP: {log['source_ip']} | URL: {log['url']} | Description: {log['description']}")
+    else:
+        print("No suspicious log entries detected.")
+
+# Run analysis
+if __name__ == "__main__":
+    log_file_path = input("Enter the path to the security log file: ")
+    analyze_log_file(log_file_path)
